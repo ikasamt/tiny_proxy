@@ -1,0 +1,9 @@
+{
+  "port": 3000,
+  "backends": {
+    "example1.com": "http://127.0.0.1:3001/",
+    "example2.com": "http://127.0.0.1:3002/"
+  },
+  "sslCertPath": "cert.pem",
+  "sslKeyPath": "key.pem"
+}
