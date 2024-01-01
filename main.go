@@ -93,6 +93,17 @@ func main() {
 				uuidCookie = &http.Cookie{Value: newUUID}
 			}
 
+			// X-Forwarded-For ヘッダーを更新または設定
+			// クライアントのIPアドレスを取得
+			clientIP := r.RemoteAddr
+			if ip := strings.Split(clientIP, ":"); len(ip) > 0 {
+				clientIP = ip[0]
+			}
+			if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+				clientIP = xff + ", " + clientIP
+			}
+			r.Header.Set("X-Forwarded-For", clientIP)
+
 			lrw := &loggingResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
 			if strings.HasPrefix(host, key) {
 				proxy := proxies[key]
