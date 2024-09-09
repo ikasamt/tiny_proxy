@@ -4,6 +4,7 @@
     "example1.com": "http://127.0.0.1:3001/",
     "example2.com": "http://127.0.0.1:3002/"
   },
+  "hostWhitelist": "example1.com",
   "sslCertPath": "cert.pem",
   "sslKeyPath": "key.pem"
 }

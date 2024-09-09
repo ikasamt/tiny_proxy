@@ -2,8 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
-	"github.com/google/uuid"
+	"fmt"
 	"log"
 	"log/slog"
 	"net/http"
@@ -11,13 +12,18 @@ import (
 	"net/url"
 	"os"
 	"strings"
+
+	"github.com/google/uuid"
+	"golang.org/x/crypto/acme/autocert"
 )
 
 type Config struct {
-	Backends    map[string]string `json:"backends"`
-	Port        int               `json:"port"`
-	SslCertPath string            `json:"sslCertPath"`
-	SslKeyPath  string            `json:"sslKeyPath"`
+	Backends      map[string]string `json:"backends"`
+	Port          int               `json:"port"`
+	Port2         int               `json:"port2"`
+	SslCertPath   string            `json:"sslCertPath"`
+	SslKeyPath    string            `json:"sslKeyPath"`
+	HostWhitelist []string          `json:"hostWhitelist"`
 }
 
 var config Config
@@ -125,6 +131,53 @@ func main() {
 	})
 
 	log.Println("log file: access.log")
-	log.Printf("Listening on port 8080")
-	log.Fatal(http.ListenAndServeTLS(":8080", config.SslCertPath, config.SslKeyPath, nil))
+	if config.SslCertPath == "" || config.SslKeyPath == "" {
+		fmt.Println("SSL Cert: Let's Encrypt")
+		fmt.Println("certManager.....")
+		certManager := autocert.Manager{
+			Prompt:     autocert.AcceptTOS,
+			Cache:      autocert.DirCache("certs"),
+			HostPolicy: autocert.HostWhitelist(config.HostWhitelist...), // 実際のドメイン名に置き換え
+		}
+
+		// HTTPサーバーを80番ポートで起動し、チャレンジリクエストを処理
+		go func() {
+			http.HandleFunc("/.well-known/acme-challenge/", func(w http.ResponseWriter, r *http.Request) {
+				log.Printf("Received ACME challenge request for %s", r.URL.Path)
+				certManager.HTTPHandler(nil).ServeHTTP(w, r)
+			})
+			log.Printf(fmt.Sprintf("Listening http on port :%d", config.Port2))
+			err := http.ListenAndServe(fmt.Sprintf(":%d", config.Port2), nil)
+			if err != nil {
+				log.Fatalf("HTTP server for ACME challenge failed: %v", err)
+			}
+		}()
+
+		// GetCertificate メソッドをラップしてログを追加
+		getCertificate := func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+			log.Printf("Attempting to get certificate for: %s", hello.ServerName)
+			cert, err := certManager.GetCertificate(hello)
+			if err != nil {
+				log.Printf("Failed to get certificate for %s: %v", hello.ServerName, err)
+			} else {
+				log.Printf("Successfully got certificate for %s", hello.ServerName)
+			}
+			return cert, err
+		}
+
+		log.Println("https server.....")
+		log.Printf(fmt.Sprintf("Listening https on port :%d", config.Port))
+		server := &http.Server{
+			Addr: fmt.Sprintf(":%d", config.Port),
+			TLSConfig: &tls.Config{
+				// GetCertificate: certManager.GetCertificate,
+				GetCertificate: getCertificate,
+			},
+		}
+		log.Fatal(server.ListenAndServeTLS("", "")) // Let's Encryptが自動的に証明書を管理
+	} else {
+		fmt.Println("SSL Cert: ", config.SslCertPath)
+		log.Printf(fmt.Sprintf("Listening https on port :%d", config.Port))
+		log.Fatal(http.ListenAndServeTLS(fmt.Sprintf(":%d", config.Port), config.SslCertPath, config.SslKeyPath, nil))
+	}
 }
